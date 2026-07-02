@@ -4,6 +4,21 @@ appId: com.quranshasam.app
 ---
 - launchApp:
     clearState: true
+# iOS shows an "Enable Dictation?" system alert on first launch with fresh
+# state (speech-recognition entitlement); system alerts hide the app from
+# Maestro. Dismiss it; both steps are optional so Android and repeat runs
+# are unaffected.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible: 'Not Now'
+          timeout: 15000
+          optional: true
+      - tapOn:
+          text: 'Not Now'
+          optional: true
 - extendedWaitUntil:
     visible:
       id: 'textSearch.input'
@@ -11,29 +26,38 @@ appId: com.quranshasam.app
 - tapOn:
     id: 'textSearch.input'
 - inputText: 'In the name of Allah'
+# Close the keyboard deterministically: tap the keyboard's submit key
+# (bottom-right). A modal alert swallows outside taps, so this is safe when
+# the dictation alert is up; with the keyboard already closed it taps
+# below the content area — harmless.
+- tapOn:
+    point: 90%,92%
+# Dismiss the iOS dictation alert if present — Maestro's iOS driver cannot
+# see system alerts (element taps on 'Not Now' silently no-op), but a
+# coordinate tap lands regardless. With no alert and the keyboard closed,
+# this hits inert card/list area — harmless.
+- tapOn:
+    point: 50%,61%
 - extendedWaitUntil:
     visible:
       id: 'verseCard.1:1'
     timeout: 45000
-# With the soft keyboard open, RN swallows the first list tap to dismiss it
-# (keyboardShouldPersistTaps default). Tap the card once to consume that
-# dismissal deterministically, then tap the real target. (Maestro's
-# hideKeyboard is unreliable on Android — it can send BACK and exit the app.)
-- tapOn:
-    id: 'verseCard.1:1'
-- extendedWaitUntil:
-    visible:
-      id: 'verseCard.1:1.bookmark'
-    timeout: 10000
 - tapOn:
     id: 'verseCard.1:1.bookmark'
 - tapOn:
     id: 'tab.saved'
+# Keyboard is closed, so the tab tap lands on the tab bar (with it open it
+# physically hit the keyboard and the flow silently stayed on Text Search).
+- extendedWaitUntil:
+    visible:
+      id: 'saved.list'
+    timeout: 10000
 - extendedWaitUntil:
     visible:
       id: 'verseCard.1:1'
     timeout: 10000
 # Unbookmark from the saved card → list empties.
+- waitForAnimationToEnd
 - tapOn:
     id: 'verseCard.1:1.bookmark'
 - extendedWaitUntil:

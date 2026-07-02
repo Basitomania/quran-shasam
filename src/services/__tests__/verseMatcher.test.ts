@@ -120,3 +120,71 @@ describe('findTopMatches', () => {
     expect(results).toEqual([]);
   });
 });
+
+describe('spec 015 — performance path', () => {
+  let matcher: VerseMatcher;
+
+  beforeAll(() => {
+    matcher = new VerseMatcher(FIXTURE_VERSES);
+  });
+
+  it('containment short-circuit: a long exact paste skips fuse but still identifies the verse', () => {
+    const logSpy = console.log as jest.Mock;
+    logSpy.mockClear();
+    const results = matcher.findTopMatches(
+      'In the name of Allah, the Entirely Merciful',
+      5,
+      'english'
+    );
+    expect(`${results[0].verse.surah}:${results[0].verse.ayah}`).toBe('1:1');
+    expect(results[0].score).toBeGreaterThanOrEqual(85);
+    const skipped = logSpy.mock.calls.some((args) =>
+      String(args[0]).includes('containment short-circuit')
+    );
+    expect(skipped).toBe(true);
+  });
+
+  it('input over 32 chars with no containment hit still completes and returns []', () => {
+    const results = matcher.findTopMatches(
+      'zzzz qqqq xxxx wwww vvvv uuuu tttt ssss',
+      3,
+      'english'
+    );
+    expect(results).toEqual([]);
+  });
+
+  describe('findTopMatchesAsync', () => {
+    const PARITY_QUERIES: [string, 'arabic' | 'english' | 'both'][] = [
+      ['Allah', 'english'],
+      ['mercy of allah', 'english'],
+      ['In the name of Allah, the Entirely Merciful', 'english'],
+      ['قل هو الله احد', 'arabic'],
+      ['Entirely Merciful', 'both'],
+      ['zzzz qqqq xxxx', 'english'],
+      ['', 'english'],
+    ];
+
+    it('resolves the same results as the sync path', async () => {
+      for (const [query, language] of PARITY_QUERIES) {
+        const sync = matcher.findTopMatches(query, 5, language);
+        const async = await matcher.findTopMatchesAsync(query, 5, language);
+        expect(async).toEqual(sync);
+      }
+    });
+
+    it('resolves null when the token is aborted before the search starts', async () => {
+      const token = { aborted: true };
+      const result = await matcher.findTopMatchesAsync('mercy of allah', 5, 'english', 20, token);
+      expect(result).toBeNull();
+    });
+
+    it('resolves null when the token is aborted mid-search', async () => {
+      const token = { aborted: false };
+      // 'mercy of allah' has no containment hit, so the fuse shard loop runs
+      // and yields to the event loop, where the abort lands.
+      const pending = matcher.findTopMatchesAsync('mercy of allah', 5, 'english', 20, token);
+      token.aborted = true;
+      expect(await pending).toBeNull();
+    });
+  });
+});

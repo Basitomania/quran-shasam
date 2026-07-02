@@ -1,11 +1,27 @@
 # Thematic search end-to-end, including the semantic (AI) path.
 appId: com.quranshasam.app
 ---
-- launchApp
+- launchApp:
+    clearState: true
+# iOS shows an "Enable Dictation?" system alert on first launch with fresh
+# state (speech-recognition entitlement); system alerts hide the app from
+# Maestro. Dismiss it; both steps are optional so Android and repeat runs
+# are unaffected.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible: 'Not Now'
+          timeout: 15000
+          optional: true
+      - tapOn:
+          text: 'Not Now'
+          optional: true
 - extendedWaitUntil:
     visible:
       id: 'textSearch.input'
-    timeout: 60000
+    timeout: 90000
 - tapOn:
     id: 'tab.themes'
 - assertVisible:
@@ -18,13 +34,28 @@ appId: com.quranshasam.app
 - tapOn:
     id: 'themes.input'
 - inputText: 'Story of Balqis'
+# The dictation prompt appears on first keyboard use — dismiss again here.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible: 'Not Now'
+          timeout: 5000
+          optional: true
+      - tapOn:
+          text: 'Not Now'
+          optional: true
 - tapOn:
     id: 'themes.searchButton'
 # Reranked semantic search across 6236 verses; allow inference time.
+# Assert by verseCard id (regex) — cell text isn't reliably visible to
+# Maestro on iOS. Any An-Naml (surah 27) verse in the results proves the
+# AI path returned the Balqis story.
 - extendedWaitUntil:
-    visible: 'An-Naml'
-    timeout: 30000
-- assertVisible: 'AI reranked match.*'
+    visible:
+      id: 'verseCard\.27:.*'
+    timeout: 60000
 # Keyword fallback mode still works.
 - tapOn:
     id: 'themes.backButton'

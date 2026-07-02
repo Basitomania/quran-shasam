@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuranData } from '../context/QuranContext';
 import { VerseCard } from '../components/VerseCard';
 import { containsArabic } from '../services/arabicNormalizer';
+import { SearchCancelToken } from '../services/verseMatcher';
 import { VerseMatch } from '../types/quran';
 import { colors } from '../theme/colors';
 import { testIDs } from '../testIDs';
@@ -23,12 +24,14 @@ export function TextSearchScreen() {
   const [results, setResults] = useState<VerseMatch[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchTokenRef = useRef<SearchCancelToken | null>(null);
 
   const handleSearch = useCallback(
     (text: string) => {
       setQuery(text);
 
       if (timerRef.current) clearTimeout(timerRef.current);
+      if (searchTokenRef.current) searchTokenRef.current.aborted = true;
 
       if (!text.trim() || !matcher) {
         setResults([]);
@@ -38,12 +41,24 @@ export function TextSearchScreen() {
 
       timerRef.current = setTimeout(() => {
         const language = containsArabic(text) ? 'arabic' : 'english';
-        const matches = matcher.findTopMatches(text, 5, language);
-        setResults(matches);
-        setHasSearched(true);
+        const token: SearchCancelToken = { aborted: false };
+        searchTokenRef.current = token;
+        matcher.findTopMatchesAsync(text, 5, language, 20, token).then((matches) => {
+          if (token.aborted || !matches) return;
+          setResults(matches);
+          setHasSearched(true);
+        });
       }, 300);
     },
     [matcher]
+  );
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (searchTokenRef.current) searchTokenRef.current.aborted = true;
+    },
+    []
   );
 
   const isArabic = containsArabic(query);
@@ -125,6 +140,7 @@ export function TextSearchScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         testID={testIDs.textSearch.results}
       />
     </KeyboardAvoidingView>

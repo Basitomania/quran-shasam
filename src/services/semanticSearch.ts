@@ -108,10 +108,26 @@ async function loadEmbeddings(): Promise<void> {
   const uri = embAsset.localUri.startsWith('file://') ? embAsset.localUri : `file://${embAsset.localUri}`;
   console.log('[Semantic] loadEmbeddings: File URI:', uri);
 
-  const file = new ExpoFile(uri);
-  console.log('[Semantic] loadEmbeddings: ExpoFile created, calling bytes()...');
+  console.log('[Semantic] loadEmbeddings: calling bytes()...');
   const t0 = Date.now();
-  const bytes = await file.bytes();
+  let bytes: Uint8Array;
+  try {
+    bytes = await new ExpoFile(uri).bytes();
+  } catch (err: any) {
+    // iOS RELEASE builds embed assets inside the .app bundle, and
+    // expo-file-system v19 denies reads there (ERR_MISSING_PERMISSION).
+    // Debug builds never hit this (assets land in Caches). Copy the asset
+    // into Caches with the legacy native copy (fast; NOT the forbidden
+    // readAsStringAsync+atob path) and read the copy.
+    console.log('[Semantic] loadEmbeddings: direct bytes() failed, copying to cache...', err?.code ?? String(err));
+    const legacyFs = require('expo-file-system/legacy');
+    const cachedUri = `${legacyFs.cacheDirectory}embeddings.bin`;
+    const info = await legacyFs.getInfoAsync(cachedUri);
+    if (!info.exists) {
+      await legacyFs.copyAsync({ from: uri, to: cachedUri });
+    }
+    bytes = await new ExpoFile(cachedUri).bytes();
+  }
   console.log('[Semantic] loadEmbeddings: bytes() returned in', Date.now() - t0, 'ms, size:', bytes.length);
 
   const buffer = bytes.buffer;

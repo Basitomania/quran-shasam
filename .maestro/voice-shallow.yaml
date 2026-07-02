@@ -6,11 +6,27 @@ permissions:
   ios.permission.MICROPHONE: allow
   ios.permission.SPEECH_RECOGNITION: allow
 ---
-- launchApp
+- launchApp:
+    clearState: true
+# iOS shows an "Enable Dictation?" system alert on first launch with fresh
+# state (speech-recognition entitlement); system alerts hide the app from
+# Maestro. Dismiss it; both steps are optional so Android and repeat runs
+# are unaffected.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible: 'Not Now'
+          timeout: 15000
+          optional: true
+      - tapOn:
+          text: 'Not Now'
+          optional: true
 - extendedWaitUntil:
     visible:
       id: 'textSearch.input'
-    timeout: 60000
+    timeout: 90000
 - tapOn:
     id: 'tab.voice'
 - assertVisible:

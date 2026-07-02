@@ -1,4 +1,4 @@
-import Fuse from 'fuse.js';
+import Fuse, { FuseResult } from 'fuse.js';
 import { QuranVerse, VerseMatch, MatchLanguage } from '../types/quran';
 import { normalizeArabic, normalizeEnglish } from './arabicNormalizer';
 
@@ -8,10 +8,38 @@ interface IndexedVerse {
   normalizedEnglish: string;
 }
 
+export interface SearchCancelToken {
+  aborted: boolean;
+}
+
+// Fuse's bitap runs one pass per allowed error (threshold x pattern length)
+// and splits patterns past 32 chars into extra full passes over every verse,
+// so search cost grows with input length. Capping the fuse pattern bounds
+// that work; containment always sees the full normalized text. See spec 015.
+const MAX_FUSE_PATTERN_LENGTH = 32;
+
+// A 20+ char exact substring in a 6236-verse corpus is a near-unique
+// identifier: containment hits at that length make the fuse pass redundant.
+const CONTAINMENT_SHORT_CIRCUIT_LENGTH = 20;
+
+// Fuse scoring is per-record (bitap score x per-field length norm), so
+// sharding the index and merging results is score-identical to a single
+// instance. Shards let the async search yield to the event loop between
+// batches instead of blocking the JS thread for the whole corpus.
+const FUSE_SHARD_SIZE = 250;
+
+function capFusePattern(normalized: string): string {
+  if (normalized.length <= MAX_FUSE_PATTERN_LENGTH) return normalized;
+  const hardCut = normalized.slice(0, MAX_FUSE_PATTERN_LENGTH);
+  if (normalized.charAt(MAX_FUSE_PATTERN_LENGTH) === ' ') return hardCut;
+  const lastSpace = hardCut.lastIndexOf(' ');
+  return lastSpace > 0 ? hardCut.slice(0, lastSpace) : hardCut;
+}
+
 export class VerseMatcher {
   private indexedVerses: IndexedVerse[];
-  private arabicFuse: Fuse<IndexedVerse>;
-  private englishFuse: Fuse<IndexedVerse>;
+  private arabicShards: Fuse<IndexedVerse>[];
+  private englishShards: Fuse<IndexedVerse>[];
 
   constructor(verses: QuranVerse[]) {
     this.indexedVerses = verses.map((verse) => ({
@@ -29,15 +57,17 @@ export class VerseMatcher {
       ignoreLocation: true,
     };
 
-    this.arabicFuse = new Fuse(this.indexedVerses, {
-      ...fuseOptions,
-      keys: ['normalizedArabic'],
-    });
-
-    this.englishFuse = new Fuse(this.indexedVerses, {
-      ...fuseOptions,
-      keys: ['normalizedEnglish'],
-    });
+    this.arabicShards = [];
+    this.englishShards = [];
+    for (let i = 0; i < this.indexedVerses.length; i += FUSE_SHARD_SIZE) {
+      const shard = this.indexedVerses.slice(i, i + FUSE_SHARD_SIZE);
+      this.arabicShards.push(
+        new Fuse(shard, { ...fuseOptions, keys: ['normalizedArabic'] })
+      );
+      this.englishShards.push(
+        new Fuse(shard, { ...fuseOptions, keys: ['normalizedEnglish'] })
+      );
+    }
   }
 
   findTopMatches(
@@ -46,43 +76,96 @@ export class VerseMatcher {
     language: MatchLanguage = 'both',
     minScore: number = 20
   ): VerseMatch[] {
+    const steps = this.searchSteps(input, topN, language, minScore);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
+
+  async findTopMatchesAsync(
+    input: string,
+    topN: number = 3,
+    language: MatchLanguage = 'both',
+    minScore: number = 20,
+    token?: SearchCancelToken
+  ): Promise<VerseMatch[] | null> {
+    if (token?.aborted) return null;
+    const steps = this.searchSteps(input, topN, language, minScore);
+    let step = steps.next();
+    while (!step.done) {
+      // Yield to the event loop between shards so touch and typing events
+      // interleave with the search instead of freezing the JS thread.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      if (token?.aborted) return null;
+      step = steps.next();
+    }
+    return step.value;
+  }
+
+  // Single search pipeline for both entry points: yields once per fuse
+  // shard so the async caller can time-slice; the sync caller just drains.
+  private *searchSteps(
+    input: string,
+    topN: number,
+    language: MatchLanguage,
+    minScore: number
+  ): Generator<void, VerseMatch[], void> {
     if (!input.trim()) return [];
 
-    let results: VerseMatch[] = [];
+    const results: VerseMatch[] = [];
+    const languages: ('arabic' | 'english')[] =
+      language === 'both' ? ['arabic', 'english'] : [language];
 
-    if (language === 'arabic' || language === 'both') {
-      const normalized = normalizeArabic(input);
-      console.log('[VerseMatcher] Arabic normalized input:', normalized);
+    for (const lang of languages) {
+      const normalized =
+        lang === 'arabic' ? normalizeArabic(input) : normalizeEnglish(input);
+      console.log(`[VerseMatcher] ${lang} normalized input:`, normalized);
+
       // Check for substring containment first
-      const containsMatches = this.findContainmentMatches(normalized, 'arabic');
-      const fuseMatches = this.arabicFuse.search(normalized, { limit: topN * 3 });
+      const containsMatches = this.findContainmentMatches(normalized, lang);
+      results.push(...containsMatches);
 
-      console.log('[VerseMatcher] Arabic containment:', containsMatches.length, 'fuse:', fuseMatches.length);
-      if (fuseMatches.length > 0) {
-        console.log('[VerseMatcher] Top fuse score:', fuseMatches[0].score, 'verse:', fuseMatches[0].item.verse.surah + ':' + fuseMatches[0].item.verse.ayah);
+      // Containment-first short-circuit: a full page of exact-substring hits,
+      // or any hit on a long paste, makes the fuse pass redundant (spec 015).
+      const skipFuse =
+        containsMatches.length >= topN ||
+        (normalized.length >= CONTAINMENT_SHORT_CIRCUIT_LENGTH &&
+          containsMatches.length > 0);
+      if (skipFuse) {
+        console.log(
+          `[VerseMatcher] ${lang} containment short-circuit:`,
+          containsMatches.length,
+          'matches, skipping fuse'
+        );
+        continue;
       }
 
-      results.push(...containsMatches);
-      results.push(
-        ...fuseMatches.map((r) => ({
-          verse: r.item.verse,
-          score: Math.round((1 - (r.score ?? 1)) * 100),
-        }))
+      const pattern = capFusePattern(normalized);
+      const shards = lang === 'arabic' ? this.arabicShards : this.englishShards;
+      const fuseMatches: FuseResult<IndexedVerse>[] = [];
+      for (const shard of shards) {
+        fuseMatches.push(...shard.search(pattern, { limit: topN * 3 }));
+        yield;
+      }
+
+      console.log(
+        `[VerseMatcher] ${lang} containment:`,
+        containsMatches.length,
+        'fuse:',
+        fuseMatches.length
       );
-    }
-
-    if (language === 'english' || language === 'both') {
-      const normalized = normalizeEnglish(input);
-      console.log('[VerseMatcher] English normalized input:', normalized);
-      const containsMatches = this.findContainmentMatches(normalized, 'english');
-      const fuseMatches = this.englishFuse.search(normalized, { limit: topN * 3 });
-
-      console.log('[VerseMatcher] English containment:', containsMatches.length, 'fuse:', fuseMatches.length);
       if (fuseMatches.length > 0) {
-        console.log('[VerseMatcher] Top fuse score:', fuseMatches[0].score, 'verse:', fuseMatches[0].item.verse.surah + ':' + fuseMatches[0].item.verse.ayah);
+        const top = fuseMatches.reduce((a, b) =>
+          (a.score ?? 1) <= (b.score ?? 1) ? a : b
+        );
+        console.log(
+          '[VerseMatcher] Top fuse score:',
+          top.score,
+          'verse:',
+          top.item.verse.surah + ':' + top.item.verse.ayah
+        );
       }
 
-      results.push(...containsMatches);
       results.push(
         ...fuseMatches.map((r) => ({
           verse: r.item.verse,
