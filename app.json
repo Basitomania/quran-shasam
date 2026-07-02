@@ -18,6 +18,7 @@
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to detect Quran verses from your voice.",
         "NSMicrophoneUsageDescription": "This app uses the microphone to listen for Quran recitation.",
+        "NSPhotoLibraryUsageDescription": "QuranShasam does not access your photos. This permission is declared because a system file library references the photo picker API; the app never requests it.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -39,7 +40,8 @@
     "plugins": [
       "expo-font",
       "expo-speech-recognition",
-      "expo-asset"
+      "expo-asset",
+      "onnxruntime-react-native"
     ],
     "extra": {
       "eas": {
