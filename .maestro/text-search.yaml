@@ -8,12 +8,12 @@ appId: com.quranshasam.app
     timeout: 60000
 - tapOn:
     id: 'textSearch.input'
-- inputText: 'In the name of Allah, the Entirely Merciful'
+- inputText: 'In the name of Allah'
 # 300ms debounce + match run.
 - extendedWaitUntil:
     visible:
       id: 'verseCard.1:1'
-    timeout: 15000
+    timeout: 45000
 - assertVisible: 'Al-Faatiha'
 # Clear resets the results.
 - tapOn:

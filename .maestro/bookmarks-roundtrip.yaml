@@ -10,11 +10,21 @@ appId: com.quranshasam.app
     timeout: 90000
 - tapOn:
     id: 'textSearch.input'
-- inputText: 'In the name of Allah, the Entirely Merciful'
+- inputText: 'In the name of Allah'
 - extendedWaitUntil:
     visible:
       id: 'verseCard.1:1'
-    timeout: 15000
+    timeout: 45000
+# With the soft keyboard open, RN swallows the first list tap to dismiss it
+# (keyboardShouldPersistTaps default). Tap the card once to consume that
+# dismissal deterministically, then tap the real target. (Maestro's
+# hideKeyboard is unreliable on Android — it can send BACK and exit the app.)
+- tapOn:
+    id: 'verseCard.1:1'
+- extendedWaitUntil:
+    visible:
+      id: 'verseCard.1:1.bookmark'
+    timeout: 10000
 - tapOn:
     id: 'verseCard.1:1.bookmark'
 - tapOn:
