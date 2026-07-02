@@ -12,6 +12,7 @@ import { VoiceSearchScreen } from './src/screens/VoiceSearchScreen';
 import { ThematicSearchScreen } from './src/screens/ThematicSearchScreen';
 import { SavedScreen } from './src/screens/SavedScreen';
 import { colors } from './src/theme/colors';
+import { testIDs } from './src/testIDs';
 
 const Tab = createBottomTabNavigator();
 
@@ -52,6 +53,7 @@ function AppContent() {
           options={{
             title: 'Text Search',
             headerTitle: 'Quran Shasam',
+            tabBarButtonTestID: testIDs.tabs.text,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="book-outline" size={size} color={color} />
             ),
@@ -63,6 +65,7 @@ function AppContent() {
           options={{
             title: 'Voice',
             headerTitle: 'Voice Detection',
+            tabBarButtonTestID: testIDs.tabs.voice,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="mic-outline" size={size} color={color} />
             ),
@@ -74,6 +77,7 @@ function AppContent() {
           options={{
             title: 'Themes',
             headerTitle: 'Thematic Search',
+            tabBarButtonTestID: testIDs.tabs.themes,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="layers-outline" size={size} color={color} />
             ),
@@ -85,6 +89,7 @@ function AppContent() {
           options={{
             title: 'Saved',
             headerTitle: 'Saved Verses',
+            tabBarButtonTestID: testIDs.tabs.saved,
             tabBarIcon: ({ color, size, focused }) => (
               <Ionicons
                 name={focused ? 'bookmark' : 'bookmark-outline'}

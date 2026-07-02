@@ -15,6 +15,7 @@ import { useQuranData } from '../context/QuranContext';
 import { colors } from '../theme/colors';
 import { QuranVerse } from '../types/quran';
 import { Bookmark } from '../services/bookmarks';
+import { testIDs } from '../testIDs';
 
 interface Row {
   bookmark: Bookmark;
@@ -96,7 +97,7 @@ export function SavedScreen() {
   if (rows.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.centered}>
+        <View style={styles.centered} testID={testIDs.saved.emptyState}>
           <Ionicons
             name="bookmark-outline"
             size={72}
@@ -118,6 +119,7 @@ export function SavedScreen() {
         data={rows}
         keyExtractor={(item) => `${item.bookmark.surah}:${item.bookmark.ayah}`}
         contentContainerStyle={styles.listContent}
+        testID={testIDs.saved.list}
         renderItem={({ item }) => {
           const key = `${item.bookmark.surah}:${item.bookmark.ayah}`;
           return (

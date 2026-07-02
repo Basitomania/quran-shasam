@@ -1,0 +1,32 @@
+# Bookmark a verse from search, verify on Saved, remove, verify empty.
+# Clears app state — test devices only.
+appId: com.quranshasam.app
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: 'textSearch.input'
+    timeout: 90000
+- tapOn:
+    id: 'textSearch.input'
+- inputText: 'In the name of Allah, the Entirely Merciful'
+- extendedWaitUntil:
+    visible:
+      id: 'verseCard.1:1'
+    timeout: 15000
+- tapOn:
+    id: 'verseCard.1:1.bookmark'
+- tapOn:
+    id: 'tab.saved'
+- extendedWaitUntil:
+    visible:
+      id: 'verseCard.1:1'
+    timeout: 10000
+# Unbookmark from the saved card → list empties.
+- tapOn:
+    id: 'verseCard.1:1.bookmark'
+- extendedWaitUntil:
+    visible:
+      id: 'saved.emptyState'
+    timeout: 10000

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 import { colors } from '../theme/colors';
+import { testIDs } from '../testIDs';
 
 interface Props {
   message: string;
@@ -10,7 +11,7 @@ interface Props {
 
 export function LoadingScreen({ message, error, onRetry }: Props) {
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID={testIDs.loading.screen}>
       <Text style={styles.title}>Quran Shasam</Text>
       <Text style={styles.subtitle}>Quran Verse Detector</Text>
 
@@ -21,6 +22,7 @@ export function LoadingScreen({ message, error, onRetry }: Props) {
             <TouchableOpacity
               style={styles.retryBtn}
               onPress={onRetry}
+              testID={testIDs.loading.retry}
               accessibilityRole="button"
               accessibilityLabel="Try again"
             >

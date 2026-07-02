@@ -9,6 +9,7 @@ import { VerseCard } from '../components/VerseCard';
 import { MicButton } from '../components/MicButton';
 import { VerseMatch } from '../types/quran';
 import { colors } from '../theme/colors';
+import { testIDs } from '../testIDs';
 
 type Language = 'ar-SA' | 'en-US';
 
@@ -191,6 +192,7 @@ export function VoiceSearchScreen() {
           onPress={() => {
             if (language !== 'ar-SA') toggleLanguage();
           }}
+          testID={testIDs.voice.languageArabic}
         >
           <Text
             style={[
@@ -209,6 +211,7 @@ export function VoiceSearchScreen() {
           onPress={() => {
             if (language !== 'en-US') toggleLanguage();
           }}
+          testID={testIDs.voice.languageEnglish}
         >
           <Text
             style={[
@@ -222,14 +225,22 @@ export function VoiceSearchScreen() {
       </View>
 
       <View style={styles.micArea}>
-        <MicButton isListening={isListening} onPress={toggleListening} />
+        <MicButton
+          isListening={isListening}
+          onPress={toggleListening}
+          testID={testIDs.voice.micButton}
+        />
         <Text style={styles.statusText}>
           {isListening
             ? 'Listening...'
             : 'Tap to start listening'}
         </Text>
         {partialText ? (
-          <Text style={styles.partialText} numberOfLines={2}>
+          <Text
+            style={styles.partialText}
+            numberOfLines={2}
+            testID={testIDs.voice.transcript}
+          >
             {partialText}
           </Text>
         ) : null}
@@ -252,6 +263,7 @@ export function VoiceSearchScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         keyboardDismissMode="on-drag"
+        testID={testIDs.voice.results}
         ListEmptyComponent={
           <Text style={styles.hint}>
             {language === 'ar-SA'

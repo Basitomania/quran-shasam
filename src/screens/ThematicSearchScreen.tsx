@@ -18,6 +18,7 @@ import { searchByTheme } from '../services/localThematicSearch';
 import { semanticSearch, isSemanticReady } from '../services/semanticSearch';
 import { ThematicResult } from '../types/quran';
 import { colors } from '../theme/colors';
+import { testIDs } from '../testIDs';
 
 const EXAMPLE_QUERIES = [
   'Creation of Adam',
@@ -129,6 +130,7 @@ export function ThematicSearchScreen() {
           <TouchableOpacity
             style={[styles.modeBtn, searchMode === 'ai' && styles.modeBtnActive]}
             onPress={() => setSearchMode('ai')}
+            testID={testIDs.themes.modeAI}
           >
             <Text style={[styles.modeText, searchMode === 'ai' && styles.modeTextActive]}>
               AI Search {semanticReady ? '✓' : '⏳'}
@@ -137,6 +139,7 @@ export function ThematicSearchScreen() {
           <TouchableOpacity
             style={[styles.modeBtn, searchMode === 'keyword' && styles.modeBtnActive]}
             onPress={() => setSearchMode('keyword')}
+            testID={testIDs.themes.modeKeyword}
           >
             <Text style={[styles.modeText, searchMode === 'keyword' && styles.modeTextActive]}>
               Keyword
@@ -154,11 +157,13 @@ export function ThematicSearchScreen() {
           onChangeText={setQuery}
           returnKeyType="search"
           onSubmitEditing={() => handleSearch()}
+          testID={testIDs.themes.input}
         />
         <TouchableOpacity
           style={[styles.searchBtn, isSearching && styles.searchBtnDisabled]}
           onPress={() => handleSearch()}
           disabled={isSearching}
+          testID={testIDs.themes.searchButton}
         >
           <Text style={styles.searchBtnText}>
             {isSearching ? '...' : 'Search'}
@@ -177,7 +182,7 @@ export function ThematicSearchScreen() {
         <View style={styles.examplesBox}>
           <Text style={styles.examplesTitle}>Try searching for:</Text>
           <View style={styles.chips}>
-            {EXAMPLE_QUERIES.map((q) => (
+            {EXAMPLE_QUERIES.map((q, index) => (
               <TouchableOpacity
                 key={q}
                 style={styles.chip}
@@ -185,6 +190,7 @@ export function ThematicSearchScreen() {
                   setQuery(q);
                   handleSearch(q);
                 }}
+                testID={testIDs.themes.exampleChip(index)}
               >
                 <Text style={styles.chipText}>{q}</Text>
               </TouchableOpacity>
@@ -198,7 +204,11 @@ export function ThematicSearchScreen() {
           <Text style={styles.noResults}>
             No relevant verses found. Try rephrasing your query.
           </Text>
-          <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
+          <TouchableOpacity
+            style={styles.clearBtn}
+            onPress={handleClear}
+            testID={testIDs.themes.backButton}
+          >
             <Text style={styles.clearBtnText}>← Back to topics</Text>
           </TouchableOpacity>
         </View>
@@ -206,7 +216,11 @@ export function ThematicSearchScreen() {
 
       {hasSearched && !isSearching && results.length > 0 && (
         <View style={styles.resultHeader}>
-          <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
+          <TouchableOpacity
+            style={styles.clearBtn}
+            onPress={handleClear}
+            testID={testIDs.themes.backButton}
+          >
             <Text style={styles.clearBtnText}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.resultCount}>
@@ -224,6 +238,7 @@ export function ThematicSearchScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         keyboardDismissMode="on-drag"
+        testID={testIDs.themes.results}
       />
     </KeyboardAvoidingView>
   );

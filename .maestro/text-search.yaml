@@ -1,0 +1,22 @@
+# Text search: an exact English phrase surfaces the right verse (1:1).
+appId: com.quranshasam.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'textSearch.input'
+    timeout: 60000
+- tapOn:
+    id: 'textSearch.input'
+- inputText: 'In the name of Allah, the Entirely Merciful'
+# 300ms debounce + match run.
+- extendedWaitUntil:
+    visible:
+      id: 'verseCard.1:1'
+    timeout: 15000
+- assertVisible: 'Al-Faatiha'
+# Clear resets the results.
+- tapOn:
+    id: 'textSearch.clear'
+- assertNotVisible:
+    id: 'verseCard.1:1'

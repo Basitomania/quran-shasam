@@ -1,0 +1,41 @@
+# Thematic search end-to-end, including the semantic (AI) path.
+appId: com.quranshasam.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'textSearch.input'
+    timeout: 60000
+- tapOn:
+    id: 'tab.themes'
+- assertVisible:
+    id: 'themes.input'
+# Wait for the AI mode to become ready (background ONNX init) — the AI mode
+# button shows a checkmark once semantic search is initialized.
+- extendedWaitUntil:
+    visible: 'AI Search ✓'
+    timeout: 90000
+- tapOn:
+    id: 'themes.input'
+- inputText: 'Story of Balqis'
+- tapOn:
+    id: 'themes.searchButton'
+# Reranked semantic search across 6236 verses; allow inference time.
+- extendedWaitUntil:
+    visible: 'An-Naml'
+    timeout: 30000
+- assertVisible: 'AI reranked match.*'
+# Keyword fallback mode still works.
+- tapOn:
+    id: 'themes.backButton'
+- tapOn:
+    id: 'themes.mode.keyword'
+- tapOn:
+    id: 'themes.input'
+- inputText: 'patience'
+- tapOn:
+    id: 'themes.searchButton'
+- extendedWaitUntil:
+    visible:
+      id: 'themes.results'
+    timeout: 15000

@@ -7,6 +7,6 @@ module.exports = {
     '\\.(onnx|bin)$': '<rootDir>/test/transformers/assetFileTransformer.js',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|expo-modules-core|onnxruntime-react-native|fuse.js)/)',
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|expo-.*|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|expo-modules-core|onnxruntime-react-native|fuse.js)/)',
   ],
 };

@@ -15,6 +15,7 @@ import { QuranVerse } from '../types/quran';
 import { colors } from '../theme/colors';
 import { useBookmarks } from '../context/BookmarksContext';
 import { formatVerseForShare } from '../utils/formatVerse';
+import { testIDs } from '../testIDs';
 
 interface Props {
   verse: QuranVerse;
@@ -103,6 +104,7 @@ export function VerseCard({ verse, score, reason }: Props) {
       delayLongPress={400}
       accessibilityRole="text"
       accessibilityHint="Long press to copy verse"
+      testID={testIDs.verseCard.card(verse.surah, verse.ayah)}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
     >
       <View style={styles.header}>
@@ -148,6 +150,7 @@ export function VerseCard({ verse, score, reason }: Props) {
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Copy verse"
+          testID={testIDs.verseCard.copy(verse.surah, verse.ayah)}
           style={({ pressed }) => [
             styles.actionBtn,
             pressed && styles.actionBtnPressed,
@@ -164,6 +167,7 @@ export function VerseCard({ verse, score, reason }: Props) {
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Share verse"
+          testID={testIDs.verseCard.share(verse.surah, verse.ayah)}
           style={({ pressed }) => [
             styles.actionBtn,
             pressed && styles.actionBtnPressed,
@@ -180,6 +184,7 @@ export function VerseCard({ verse, score, reason }: Props) {
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={saved ? 'Remove bookmark' : 'Save verse'}
+          testID={testIDs.verseCard.bookmark(verse.surah, verse.ayah)}
           accessibilityState={{ selected: saved }}
           style={({ pressed }) => [
             styles.actionBtn,

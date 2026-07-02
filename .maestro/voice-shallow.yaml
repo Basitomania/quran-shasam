@@ -1,0 +1,27 @@
+# Voice screen renders and the language toggle works. No speech automation —
+# spec-011 behavior is unit-tested (VoiceSearchScreen.test.tsx).
+appId: com.quranshasam.app
+permissions:
+  android.permission.RECORD_AUDIO: allow
+  ios.permission.MICROPHONE: allow
+  ios.permission.SPEECH_RECOGNITION: allow
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'textSearch.input'
+    timeout: 60000
+- tapOn:
+    id: 'tab.voice'
+- assertVisible:
+    id: 'voice.micButton'
+- assertVisible:
+    id: 'voice.language.arabic'
+- assertVisible:
+    id: 'voice.language.english'
+- tapOn:
+    id: 'voice.language.english'
+- tapOn:
+    id: 'voice.language.arabic'
+- assertVisible:
+    id: 'voice.micButton'

@@ -15,6 +15,7 @@ import { VerseCard } from '../components/VerseCard';
 import { containsArabic } from '../services/arabicNormalizer';
 import { VerseMatch } from '../types/quran';
 import { colors } from '../theme/colors';
+import { testIDs } from '../testIDs';
 
 export function TextSearchScreen() {
   const { matcher } = useQuranData();
@@ -65,9 +66,10 @@ export function TextSearchScreen() {
           onChangeText={handleSearch}
           autoCorrect={false}
           returnKeyType="search"
+          testID={testIDs.textSearch.input}
         />
         {query.length > 0 && (
-          <Text style={styles.langBadge}>
+          <Text style={styles.langBadge} testID={testIDs.textSearch.languageBadge}>
             {isArabic ? 'AR' : 'EN'}
           </Text>
         )}
@@ -75,6 +77,7 @@ export function TextSearchScreen() {
           <TouchableOpacity
             onPress={() => handleSearch('')}
             style={styles.clearBtn}
+            testID={testIDs.textSearch.clear}
             accessibilityRole="button"
             accessibilityLabel="Clear search"
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -122,6 +125,7 @@ export function TextSearchScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         keyboardDismissMode="on-drag"
+        testID={testIDs.textSearch.results}
       />
     </KeyboardAvoidingView>
   );

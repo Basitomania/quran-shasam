@@ -11,9 +11,10 @@ import { colors } from '../theme/colors';
 interface Props {
   isListening: boolean;
   onPress: () => void;
+  testID?: string;
 }
 
-export function MicButton({ isListening, onPress }: Props) {
+export function MicButton({ isListening, onPress, testID }: Props) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(0.6)).current;
 
@@ -75,6 +76,7 @@ export function MicButton({ isListening, onPress }: Props) {
         ]}
         onPress={onPress}
         activeOpacity={0.8}
+        testID={testID}
       >
         <Ionicons
           name={isListening ? 'mic' : 'mic-outline'}

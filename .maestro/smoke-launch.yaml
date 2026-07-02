@@ -1,0 +1,18 @@
+# Cold launch reaches the Text Search tab within budget.
+appId: com.quranshasam.app
+---
+- launchApp:
+    clearState: false
+# Quran data may need a first-run download; allow a generous cold budget.
+- extendedWaitUntil:
+    visible:
+      id: 'textSearch.input'
+    timeout: 60000
+- assertVisible:
+    id: 'tab.text'
+- assertVisible:
+    id: 'tab.voice'
+- assertVisible:
+    id: 'tab.themes'
+- assertVisible:
+    id: 'tab.saved'

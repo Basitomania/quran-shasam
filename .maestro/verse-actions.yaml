@@ -1,0 +1,28 @@
+# Copy action on a verse card (cross-platform; share sheet is OS UI and
+# flaky to assert, so this flow covers copy only).
+appId: com.quranshasam.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'textSearch.input'
+    timeout: 60000
+- tapOn:
+    id: 'textSearch.input'
+- inputText: 'In the name of Allah, the Entirely Merciful'
+- extendedWaitUntil:
+    visible:
+      id: 'verseCard.1:1'
+    timeout: 15000
+- tapOn:
+    id: 'verseCard.1:1.copy'
+# iOS shows an in-app "Copied" overlay Maestro can assert. Android uses
+# ToastAndroid — a system overlay Maestro cannot see — so the confirmation
+# check is optional; the flow still proves the tap doesn't crash and the
+# screen stays responsive.
+- extendedWaitUntil:
+    visible: 'Copied.*'
+    timeout: 5000
+    optional: true
+- assertVisible:
+    id: 'verseCard.1:1'
