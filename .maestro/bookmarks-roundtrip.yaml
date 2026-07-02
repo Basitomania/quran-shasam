@@ -26,12 +26,10 @@ appId: com.quranshasam.app
 - tapOn:
     id: 'textSearch.input'
 - inputText: 'In the name of Allah'
-# Close the keyboard deterministically: tap the keyboard's submit key
-# (bottom-right). A modal alert swallows outside taps, so this is safe when
-# the dictation alert is up; with the keyboard already closed it taps
-# below the content area — harmless.
-- tapOn:
-    point: 90%,92%
+# Close the keyboard deterministically via the return key (returnKeyType
+# "search" submits and dismisses). Coordinate-tapping the key is fragile —
+# on iOS the dictation mic sits right below it.
+- pressKey: Enter
 # Dismiss the iOS dictation alert if present — Maestro's iOS driver cannot
 # see system alerts (element taps on 'Not Now' silently no-op), but a
 # coordinate tap lands regardless. With no alert and the keyboard closed,
