@@ -26,32 +26,18 @@ appId: com.quranshasam.app
 - tapOn:
     id: 'textSearch.input'
 - inputText: 'In the name of Allah'
-# The dictation prompt appears on first keyboard use — dismiss again here.
-- runFlow:
-    when:
-      platform: iOS
-    commands:
-      - extendedWaitUntil:
-          visible: 'Not Now'
-          timeout: 5000
-          optional: true
-      - tapOn:
-          text: 'Not Now'
-          optional: true
+# Close the keyboard via the return key. Since spec 015 the results list
+# uses keyboardShouldPersistTaps="handled", so the old tap-to-dismiss
+# trick no longer dismisses — Enter is the deterministic way.
+- pressKey: Enter
+# Dismiss the iOS dictation alert if present (coordinate tap — Maestro's
+# iOS driver cannot see system alerts; harmless when absent).
+- tapOn:
+    point: 50%,61%
 - extendedWaitUntil:
     visible:
       id: 'verseCard.1:1'
     timeout: 45000
-# With the soft keyboard open, RN swallows the first list tap to dismiss it
-# (keyboardShouldPersistTaps default). Tap the card once to consume that
-# dismissal deterministically, then tap the real target. (Maestro's
-# hideKeyboard is unreliable on Android — it can send BACK and exit the app.)
-- tapOn:
-    id: 'verseCard.1:1'
-- extendedWaitUntil:
-    visible:
-      id: 'verseCard.1:1.copy'
-    timeout: 10000
 - tapOn:
     id: 'verseCard.1:1.copy'
 # iOS shows an in-app "Copied" overlay Maestro can assert. Android uses
