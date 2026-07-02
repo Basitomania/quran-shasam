@@ -25,7 +25,7 @@ import { QuranVerse } from '../types/quran';
 const MAX_LENGTH = 192;
 const MAX_BATCH = 25;
 
-interface TokenizerData {
+export interface TokenizerData {
   model: {
     vocab: { [token: string]: number };
   };
@@ -181,8 +181,10 @@ export async function rerank(
  * truncated to maxLength but NOT padded — the caller pads the batch to
  * its own longest row. token_type_ids: 0 for the query segment
  * (including its [SEP]), 1 for the passage segment.
+ *
+ * Exported for tests (pure).
  */
-function encodePair(
+export function encodePair(
   query: string,
   passage: string,
   tok: TokenizerData,
@@ -227,8 +229,9 @@ function encodePair(
 /**
  * Greedy WordPiece tokenizer, matches the style used by semanticSearch.tokenize.
  * Returns raw token IDs (no [CLS]/[SEP]) up to `maxTokens`.
+ * Exported for tests (pure).
  */
-function wordpieceTokenize(
+export function wordpieceTokenize(
   text: string,
   tok: TokenizerData,
   maxTokens: number

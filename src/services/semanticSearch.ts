@@ -18,7 +18,7 @@ import { isRerankerReady, rerank } from './reranker';
 // Once-per-session flag so we log rerank failures once, don't spam retries.
 let rerankErroredThisSession = false;
 
-interface TokenizerData {
+export interface TokenizerData {
   model: {
     vocab: { [token: string]: number };
   };
@@ -332,8 +332,10 @@ const LEXICAL_STOPWORDS = new Set([
  * many distinct words hit, skipping anything already in `existing`.
  * Runs a substring scan over all 6236 tag strings — sub-10ms on device,
  * vs ~450 cross-encoder passes it replaces.
+ *
+ * Exported for tests (pure; requires setVerseMeta to have run).
  */
-function lexicalCandidates(
+export function lexicalCandidates(
   query: string,
   verses: QuranVerse[],
   limit: number,
@@ -380,8 +382,9 @@ function lexicalCandidates(
 
 /**
  * Simple WordPiece tokenizer using the vocab from tokenizer.json.
+ * Exported for tests (pure).
  */
-function tokenize(text: string, tok: TokenizerData, maxLength = 128): number[] {
+export function tokenize(text: string, tok: TokenizerData, maxLength = 128): number[] {
   const vocab = tok.model.vocab;
   const CLS = vocab['[CLS]'] ?? 101;
   const SEP = vocab['[SEP]'] ?? 102;
