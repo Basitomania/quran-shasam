@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "QuranShasam",
+    "slug": "QuranShasam",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A1628"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.quranshasam.app",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to detect Quran verses from your voice.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone to listen for Quran recitation.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.quranshasam.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-speech-recognition",
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "57206c31-c17c-43ce-b1ef-6dd2e330965b"
+      }
+    }
+  }
+}
