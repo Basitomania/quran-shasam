@@ -27,6 +27,9 @@ jest.mock('../../services/semanticSearch', () => ({
 jest.mock('../../services/reranker', () => ({
   initReranker: jest.fn(),
 }));
+jest.mock('../../services/recitationTranscriber', () => ({
+  initRecitationTranscriber: jest.fn(),
+}));
 // The real JSON assets are megabytes; the context only threads them through
 // to the (mocked) services, so empty stand-ins keep this suite fast.
 jest.mock('../../../assets/keyword_index.json', () => ({}));
@@ -39,6 +42,7 @@ import { loadQuranData } from '../../services/quranDataLoader';
 import { loadSearchIndex } from '../../services/localThematicSearch';
 import { initSemanticSearch, setVerseMeta } from '../../services/semanticSearch';
 import { initReranker } from '../../services/reranker';
+import { initRecitationTranscriber } from '../../services/recitationTranscriber';
 import { FIXTURE_VERSES } from '../../../test/fixtures/verses.small';
 
 const mockLoadQuranData = jest.mocked(loadQuranData);
@@ -46,6 +50,7 @@ const mockLoadSearchIndex = jest.mocked(loadSearchIndex);
 const mockInitSemanticSearch = jest.mocked(initSemanticSearch);
 const mockSetVerseMeta = jest.mocked(setVerseMeta);
 const mockInitReranker = jest.mocked(initReranker);
+const mockInitTranscriber = jest.mocked(initRecitationTranscriber);
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -71,6 +76,7 @@ beforeEach(() => {
   mockLoadSearchIndex.mockResolvedValue(undefined);
   mockInitSemanticSearch.mockReturnValue(NEVER);
   mockInitReranker.mockResolvedValue(true);
+  mockInitTranscriber.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -147,6 +153,93 @@ describe('background semantic init', () => {
     expect(result.current.searchReady).toBe(true);
     expect(result.current.error).toBeNull();
     expect(result.current.isLoading).toBe(false);
+  });
+});
+
+describe('background recitation transcriber init (spec 017)', () => {
+  it('never starts on the startup critical path (chained after the reranker)', async () => {
+    const semantic = deferred<boolean>();
+    const reranker = deferred<boolean>();
+    mockInitSemanticSearch.mockReturnValue(semantic.promise);
+    mockInitReranker.mockReturnValue(reranker.promise);
+
+    const { result } = renderHook(() => useQuranData(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    // App is fully usable, transcriber untouched.
+    expect(mockInitTranscriber).not.toHaveBeenCalled();
+
+    await act(async () => {
+      semantic.resolve(true);
+    });
+    // Reranker still pending — transcriber waits its turn.
+    expect(mockInitTranscriber).not.toHaveBeenCalled();
+
+    await act(async () => {
+      reranker.resolve(true);
+    });
+    expect(mockInitTranscriber).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs after a FAILED reranker init (chained on settle, not success)', async () => {
+    const semantic = deferred<boolean>();
+    mockInitSemanticSearch.mockReturnValue(semantic.promise);
+    mockInitReranker.mockRejectedValue(new Error('reranker down'));
+
+    const { result } = renderHook(() => useQuranData(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      semantic.resolve(true);
+    });
+
+    await waitFor(() => expect(mockInitTranscriber).toHaveBeenCalledTimes(1));
+  });
+
+  it('still initializes when semantic init resolves false (voice is ONNX-independent)', async () => {
+    const semantic = deferred<boolean>();
+    mockInitSemanticSearch.mockReturnValue(semantic.promise);
+
+    const { result } = renderHook(() => useQuranData(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      semantic.resolve(false);
+    });
+
+    expect(mockInitReranker).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockInitTranscriber).toHaveBeenCalledTimes(1));
+  });
+
+  it('still initializes when semantic init rejects', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const semantic = deferred<boolean>();
+    mockInitSemanticSearch.mockReturnValue(semantic.promise);
+
+    const { result } = renderHook(() => useQuranData(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      semantic.reject(new Error('onnx down'));
+    });
+
+    await waitFor(() => expect(mockInitTranscriber).toHaveBeenCalledTimes(1));
+  });
+
+  it('transcriber init failure leaves the app usable with no error', async () => {
+    const semantic = deferred<boolean>();
+    mockInitSemanticSearch.mockReturnValue(semantic.promise);
+    mockInitTranscriber.mockResolvedValue(false);
+
+    const { result } = renderHook(() => useQuranData(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      semantic.resolve(true);
+    });
+
+    await waitFor(() => expect(mockInitTranscriber).toHaveBeenCalledTimes(1));
+    expect(result.current.error).toBeNull();
+    expect(result.current.searchReady).toBe(true);
   });
 });
 

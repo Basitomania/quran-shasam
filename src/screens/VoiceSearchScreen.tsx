@@ -10,12 +10,16 @@ import { MicButton } from '../components/MicButton';
 import { VerseMatch } from '../types/quran';
 import { colors } from '../theme/colors';
 import { testIDs } from '../testIDs';
+import { isRecitationReady, transcribeRecitation } from '../services/recitationTranscriber';
+import { matchVoiceTranscript } from '../services/voiceMatch';
+import { semanticSearch } from '../services/semanticSearch';
 
 type Language = 'ar-SA' | 'en-US';
 
 export function VoiceSearchScreen() {
-  const { matcher } = useQuranData();
+  const { matcher, verses, semanticReady } = useQuranData();
   const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [partialText, setPartialText] = useState('');
   const [results, setResults] = useState<VerseMatch[]>([]);
   const [language, setLanguage] = useState<Language>('ar-SA');
@@ -43,6 +47,14 @@ export function VoiceSearchScreen() {
   // Guards against processing the same transcript twice (e.g. isFinal result
   // + end event both trying to run a search).
   const processedRef = useRef(false);
+  // Spec 017: Arabic sessions route through the on-device Whisper transcriber
+  // when it is ready and the OS can persist the session audio. Decided once
+  // per session at start(); mid-session state changes don't flip the route.
+  const whisperSessionRef = useRef(false);
+  // file:// URI of the persisted session WAV, from the audioend event.
+  const recordingUriRef = useRef<string | null>(null);
+  // Cancellation flag: async whisper processing must not setState after unmount.
+  const mountedRef = useRef(true);
 
   const clearMaxSessionTimer = () => {
     if (maxSessionTimerRef.current) {
@@ -51,9 +63,9 @@ export function VoiceSearchScreen() {
     }
   };
 
-  const processTranscript = useCallback((text: string) => {
-    if (processedRef.current) return;
-    processedRef.current = true;
+  // Shared final step: run the matcher on a transcript and show the results.
+  // No processedRef guard here — callers own the process-once contract.
+  const runMatch = useCallback((text: string) => {
     setPartialText('');
     setRecognizedText(text);
     console.log('[Voice] Processing transcript:', text);
@@ -64,6 +76,53 @@ export function VoiceSearchScreen() {
       setResults(matches);
     }
   }, [matcher, language]);
+
+  const processTranscript = useCallback((text: string) => {
+    if (processedRef.current) return;
+    processedRef.current = true;
+    runMatch(text);
+  }, [runMatch]);
+
+  // Spec 017: Whisper path for Arabic sessions. Transcribes the persisted
+  // session WAV with the on-device recitation model, then runs the voice
+  // match ladder (plain -> windowed -> semantic merge). Falls back to the
+  // OS-recognizer transcript on any failure. Runs exactly once per session
+  // (processedRef), like processTranscript.
+  const processWhisperSession = useCallback(async (wavUri: string) => {
+    if (processedRef.current) return;
+    processedRef.current = true;
+    setIsTranscribing(true);
+    try {
+      const transcript = await transcribeRecitation(wavUri);
+      if (!mountedRef.current) return;
+      if (!transcript.trim()) {
+        // Whisper heard nothing usable — fall back to the OS transcript.
+        runMatch(latestTextRef.current);
+        return;
+      }
+      setPartialText('');
+      setRecognizedText(transcript);
+      console.log('[Voice] Whisper transcript:', transcript);
+      if (matcher) {
+        const matches = await matchVoiceTranscript(matcher, transcript, 'arabic', {
+          topN: 5,
+          minScore: 15,
+          semanticSearch: semanticReady
+            ? (query) => semanticSearch(query, verses, 5)
+            : undefined,
+        });
+        if (!mountedRef.current) return;
+        console.log('[Voice] Whisper matches found:', matches.length);
+        setResults(matches);
+      }
+    } catch (err: any) {
+      console.warn('[Voice] Whisper transcription failed, using OS transcript:', err?.message ?? String(err));
+      if (!mountedRef.current) return;
+      runMatch(latestTextRef.current);
+    } finally {
+      if (mountedRef.current) setIsTranscribing(false);
+    }
+  }, [matcher, runMatch, semanticReady, verses]);
 
   useSpeechRecognitionEvent('start', () => {
     setIsListening(true);
@@ -78,11 +137,20 @@ export function VoiceSearchScreen() {
     }, MAX_SESSION_MS);
   });
 
+  // The persisted session WAV is announced on audioend (fires before end).
+  useSpeechRecognitionEvent('audioend', (event) => {
+    recordingUriRef.current = event?.uri ?? null;
+  });
+
   useSpeechRecognitionEvent('end', () => {
     setIsListening(false);
     clearMaxSessionTimer();
     // Single processing path: process whatever we have when the session ends.
-    if (latestTextRef.current.trim()) {
+    if (whisperSessionRef.current && recordingUriRef.current) {
+      // Arabic Whisper route — transcribe the recorded WAV. Falls back to
+      // the OS transcript internally on failure.
+      processWhisperSession(recordingUriRef.current);
+    } else if (latestTextRef.current.trim()) {
       processTranscript(latestTextRef.current);
     }
   });
@@ -105,8 +173,12 @@ export function VoiceSearchScreen() {
     latestTextRef.current = text;
 
     if (event.isFinal) {
-      // Rare in continuous mode, but handle defensively.
-      processTranscript(text);
+      // Rare in continuous mode, but handle defensively. In a Whisper
+      // session the OS transcript is only the fallback — `end` decides;
+      // consuming the session here would race the recording.
+      if (!whisperSessionRef.current) {
+        processTranscript(text);
+      }
       return;
     }
 
@@ -115,7 +187,9 @@ export function VoiceSearchScreen() {
 
   // Safety: clear timers on unmount and ensure recognizer is stopped.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       clearMaxSessionTimer();
       try {
         ExpoSpeechRecognitionModule.stop();
@@ -158,11 +232,35 @@ export function VoiceSearchScreen() {
       // Reset per-session guards so a fresh session can process again.
       processedRef.current = false;
       latestTextRef.current = '';
+      recordingUriRef.current = null;
+
+      // Spec 017: Arabic sessions use on-device Whisper when the transcriber
+      // is ready and the OS can persist the session audio. Fallback ladder:
+      // transcriber not ready/failed -> OS recognizer path (unchanged).
+      let supportsRecording = false;
+      try {
+        supportsRecording = ExpoSpeechRecognitionModule.supportsRecording();
+      } catch {
+        // Older platform/module — treat as unsupported.
+      }
+      whisperSessionRef.current =
+        language === 'ar-SA' && isRecitationReady() && supportsRecording;
 
       ExpoSpeechRecognitionModule.start({
         lang: language,
         interimResults: true,
         continuous: true,
+        ...(whisperSessionRef.current
+          ? {
+              recordingOptions: {
+                persist: true,
+                // whisper.cpp decodes 16 kHz PCM16 WAV. Android persists
+                // that natively; iOS needs both options set explicitly.
+                outputSampleRate: 16000,
+                outputEncoding: 'pcmFormatInt16' as const,
+              },
+            }
+          : null),
       });
     } catch (err: any) {
       Alert.alert(
@@ -233,7 +331,9 @@ export function VoiceSearchScreen() {
         <Text style={styles.statusText}>
           {isListening
             ? 'Listening...'
-            : 'Tap to start listening'}
+            : isTranscribing
+              ? 'Recognizing recitation...'
+              : 'Tap to start listening'}
         </Text>
         {partialText ? (
           <Text
@@ -251,6 +351,31 @@ export function VoiceSearchScreen() {
         ) : null}
         {__DEV__ && debugInfo ? (
           <Text style={styles.debugText}>{debugInfo}</Text>
+        ) : null}
+        {__DEV__ ? (
+          <TouchableOpacity
+            style={styles.spikeBtn}
+            testID="whisper-spike-button"
+            onPress={async () => {
+              // Spec 017 Phase 0 latency spike — lazy import so whisper.rn
+              // never loads outside this dev-only tap.
+              try {
+                const { runWhisperSpike } = await import('../dev/whisperSpike');
+                const r = await runWhisperSpike();
+                Alert.alert(
+                  'Whisper spike',
+                  `model: ${r.modelName}\ninit: ${r.initMs} ms\n` +
+                    `transcribe: ${r.transcribeMs} ms (${r.audioSec.toFixed(1)} s clip)\n` +
+                    `RTF: ${r.rtf.toFixed(2)}\n\n${r.transcript.slice(0, 120)}`
+                );
+              } catch (err: any) {
+                console.log(`[WhisperSpike] ERROR ${err?.message ?? err}`);
+                Alert.alert('Whisper spike failed', err?.message ?? String(err));
+              }
+            }}
+          >
+            <Text style={styles.spikeBtnText}>Whisper spike (dev)</Text>
+          </TouchableOpacity>
         ) : null}
       </View>
 
@@ -334,6 +459,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+  spikeBtn: {
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  spikeBtnText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
   },
   debugText: {
     color: colors.textMuted,

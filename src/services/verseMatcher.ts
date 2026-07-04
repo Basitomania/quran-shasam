@@ -199,7 +199,7 @@ export class VerseMatcher {
   ): VerseMatch[] {
     if (normalized.length < 5) return [];
 
-    const matches: VerseMatch[] = [];
+    const matches: { verse: QuranVerse; score: number; text: string }[] = [];
     for (const item of this.indexedVerses) {
       const verseText =
         lang === 'arabic' ? item.normalizedArabic : item.normalizedEnglish;
@@ -209,10 +209,104 @@ export class VerseMatcher {
             (normalized.length + verseText.length) *
             100
         );
-        matches.push({ verse: item.verse, score: Math.max(ratio, 85) });
+        matches.push({ verse: item.verse, score: Math.max(ratio, 85), text: verseText });
       }
     }
 
-    return matches.sort((a, b) => b.score - a.score).slice(0, 5);
+    // Prefix tie-break (spec 017): when verse A's text is a strict prefix of
+    // verse B's text AND the query extends beyond A's text, the length-ratio
+    // score prefers the shorter exact verse A even though the extra query
+    // words can only belong to B (real case: 3:2 is a strict prefix of 2:255;
+    // the opening of Ayat al-Kursi used to resolve to 3:2). Ordering only —
+    // bump B just above A; the ratio formula itself is untouched.
+    for (const a of matches) {
+      if (normalized.length <= a.text.length) continue; // query doesn't extend beyond A
+      for (const b of matches) {
+        if (b === a) continue;
+        if (b.text.length > a.text.length && b.text.startsWith(a.text)) {
+          b.score = Math.max(b.score, Math.min(100, a.score + 1));
+        }
+      }
+    }
+
+    return matches
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(({ verse, score }) => ({ verse, score }));
+  }
+
+  /**
+   * Sliding-window matching for LONG, NOISY transcripts (voice / Shazam
+   * mode, spec 017). A 15-second recitation transcript spans several verses
+   * and carries phonetic transcription errors; the standard path fails on it
+   * twice over: containment needs near-exact substrings, and the spec-015
+   * Fuse pattern cap only fuzzy-matches the first ~32 normalized chars —
+   * garbled opening words doom the whole clip even when a later stretch is
+   * nearly perfect.
+   *
+   * Instead: split the input into overlapping word windows, run each window
+   * through the normal pipeline (containment + capped Fuse — the tuned
+   * constants are untouched), and aggregate votes per verse across windows.
+   * A verse's final score is its best window score plus a small bonus per
+   * additional supporting window (capped), so verses corroborated by several
+   * windows outrank one-window flukes.
+   *
+   * Costs windows×(normal search); callers should treat this as the
+   * expensive path and use it for final transcripts only, never per
+   * keystroke.
+   */
+  findTopMatchesWindowed(
+    input: string,
+    topN: number = 3,
+    language: MatchLanguage = 'both',
+    minScore: number = 20,
+    windowWords: number = 8,
+    strideWords: number = 4
+  ): VerseMatch[] {
+    const words = input.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [];
+
+    // Short inputs: the plain path already handles these well (and the
+    // 32-char cap barely bites) — no need to pay for windowing.
+    if (words.length <= windowWords) {
+      return this.findTopMatches(input, topN, language, minScore);
+    }
+
+    const windows: string[] = [];
+    for (let start = 0; start < words.length; start += strideWords) {
+      windows.push(words.slice(start, start + windowWords).join(' '));
+      if (start + windowWords >= words.length) break;
+    }
+    // The whole transcript is one more "window": full-string containment
+    // still catches clean multi-verse captures in a single shot.
+    windows.push(input);
+
+    const votes = new Map<string, { verse: VerseMatch['verse']; best: number; support: number }>();
+    for (const w of windows) {
+      // Per-window minScore of 1: weak window hits still contribute votes;
+      // the caller-facing minScore is applied to aggregated results below.
+      const hits = this.findTopMatches(w, topN, language, 1);
+      for (const hit of hits) {
+        const key = `${hit.verse.surah}:${hit.verse.ayah}`;
+        const v = votes.get(key);
+        if (!v) {
+          votes.set(key, { verse: hit.verse, best: hit.score, support: 1 });
+        } else {
+          v.best = Math.max(v.best, hit.score);
+          v.support += 1;
+        }
+      }
+    }
+
+    const aggregated: VerseMatch[] = Array.from(votes.values()).map((v) => ({
+      verse: v.verse,
+      // +4 per extra supporting window, capped at +12; clamp to 100.
+      score: Math.min(100, v.best + Math.min(3, v.support - 1) * 4),
+    }));
+
+    return aggregated
+      .filter((m) => m.score >= minScore)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topN);
   }
 }

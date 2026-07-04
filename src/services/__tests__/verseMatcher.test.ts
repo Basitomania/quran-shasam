@@ -121,6 +121,53 @@ describe('findTopMatches', () => {
   });
 });
 
+describe('spec 017 — containment prefix tie-break', () => {
+  it('ranks 2:255 above 3:2 for the opening of Ayat al-Kursi (real failing case)', () => {
+    // 3:2 is a strict prefix of 2:255 (a real Quranic subset-verse case).
+    // A query covering the first ~15 words of Ayat al-Kursi extends beyond
+    // 3:2's full text, so 2:255 must win despite the length-ratio score
+    // preferring the shorter exact verse.
+    const matcher = new VerseMatcher(FIXTURE_VERSES);
+    const kursi = FIXTURE_VERSES.find((v) => v.surah === 2 && v.ayah === 255)!;
+    const query = kursi.arabicText.split(/\s+/).slice(0, 15).join(' ');
+
+    const results = matcher.findTopMatches(query, 3, 'arabic');
+    expect(results.length).toBeGreaterThanOrEqual(2);
+    expect(`${results[0].verse.surah}:${results[0].verse.ayah}`).toBe('2:255');
+
+    const keys = results.map((r) => `${r.verse.surah}:${r.verse.ayah}`);
+    expect(keys).toContain('3:2'); // still present, just no longer top-1
+  });
+
+  it('does not fire when the query is exactly the shorter verse', () => {
+    // Query = 3:2's full text: nothing extends beyond it, so the exact
+    // match keeps top rank over its superset 2:255.
+    const matcher = new VerseMatcher(FIXTURE_VERSES);
+    const short = FIXTURE_VERSES.find((v) => v.surah === 3 && v.ayah === 2)!;
+
+    const results = matcher.findTopMatches(short.arabicText, 3, 'arabic');
+    expect(`${results[0].verse.surah}:${results[0].verse.ayah}`).toBe('3:2');
+  });
+
+  it('generalizes: the extending verse outranks its strict prefix for an extending query', () => {
+    const mkVerse = (ayah: number, en: string) => ({
+      surah: 99,
+      ayah,
+      surahNameEnglish: 'Synthetic',
+      surahNameArabic: 'synthetic',
+      arabicText: `placeholder ${ayah}`,
+      englishText: en,
+    });
+    const matcher = new VerseMatcher([
+      mkVerse(1, 'alpha beta gamma'),
+      mkVerse(2, 'alpha beta gamma delta epsilon zeta'),
+    ]);
+
+    const results = matcher.findTopMatches('alpha beta gamma delta', 3, 'english');
+    expect(results[0].verse.ayah).toBe(2);
+  });
+});
+
 describe('spec 015 — performance path', () => {
   let matcher: VerseMatcher;
 

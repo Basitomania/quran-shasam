@@ -5,6 +5,7 @@ import { VerseMatcher } from '../services/verseMatcher';
 import { loadSearchIndex } from '../services/localThematicSearch';
 import { initSemanticSearch, setVerseMeta } from '../services/semanticSearch';
 import { initReranker } from '../services/reranker';
+import { initRecitationTranscriber } from '../services/recitationTranscriber';
 
 import keywordIndexData from '../../assets/keyword_index.json';
 import verseIndexData from '../../assets/verse_index.json';
@@ -81,6 +82,20 @@ export function QuranProvider({ children }: { children: React.ReactNode }) {
             console.log('[QuranContext] Semantic init resolved:', ok);
             if (!cancelled) setSemanticReady(ok);
 
+            // Chain recitation transcriber init in the background after the
+            // reranker (spec 017). Never on the startup critical path; init
+            // failure degrades the Arabic voice path to the OS recognizer.
+            const startTranscriberInit = () => {
+              console.log('[QuranContext] Starting recitation transcriber init in background...');
+              initRecitationTranscriber()
+                .then((transcriberOk) => {
+                  console.log('[QuranContext] Recitation transcriber init resolved:', transcriberOk);
+                })
+                .catch((err) => {
+                  console.warn('[QuranContext] Recitation transcriber init rejected:', err?.message);
+                });
+            };
+
             // Chain reranker init in the background. Never await it on the
             // startup critical path — same rule as the bi-encoder. If it
             // fails, semanticSearch keeps the retrieval-only path.
@@ -92,12 +107,19 @@ export function QuranProvider({ children }: { children: React.ReactNode }) {
                 })
                 .catch((err) => {
                   console.warn('[QuranContext] Reranker init rejected:', err?.message);
-                });
+                })
+                .finally(startTranscriberInit);
+            } else {
+              // Semantic failed — the transcriber is independent of it, so
+              // it still initializes (voice path must not depend on ONNX).
+              startTranscriberInit();
             }
           })
           .catch((err) => {
             console.error('[QuranContext] Semantic init rejected:', err?.message);
             if (!cancelled) setSemanticReady(false);
+            // Same independence rule on the rejection path.
+            initRecitationTranscriber().catch(() => {});
           });
       } catch (err: any) {
         if (cancelled) return;

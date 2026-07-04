@@ -62,6 +62,14 @@ export const FIXTURE_VERSES: QuranVerse[] = [
   },
   {
     "surah": 3,
+    "ayah": 2,
+    "surahNameEnglish": "Aal-i-Imraan",
+    "surahNameArabic": "سُورَةُ آلِ عِمۡرَانَ",
+    "arabicText": "ٱللَّهُ لَآ إِلَٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ",
+    "englishText": "Allah - there is no deity except Him, the Ever-Living, the Sustainer of existence."
+  },
+  {
+    "surah": 3,
     "ayah": 123,
     "surahNameEnglish": "Aal-i-Imraan",
     "surahNameArabic": "سُورَةُ آلِ عِمۡرَانَ",
