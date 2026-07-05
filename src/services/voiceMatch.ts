@@ -22,13 +22,60 @@
  */
 
 import { VerseMatch, MatchLanguage, ThematicResult } from '../types/quran';
+import { normalizeArabic } from './arabicNormalizer';
 
 /** Below this top-score the plain result set is considered weak. */
 export const VOICE_WEAK_SCORE = 60;
 /** Above this word count the windowed pass always runs. */
 export const VOICE_WINDOWED_MIN_WORDS = 15;
-/** Score assigned to semantic-only merges (real fuzzy scores rank above). */
-export const SEMANTIC_MERGE_SCORE = 50;
+/**
+ * Score assigned to semantic-only merges. MUST stay below any real fuzzy
+ * hit that could plausibly be correct: a device repro (98:1 recitation,
+ * 2026-07-04) showed the correct verse at fuzzy score 30 being buried
+ * under semantic junk carrying the old nominal 50.
+ */
+export const SEMANTIC_MERGE_SCORE = 20;
+
+/** Matches any Arabic-block character. */
+const ARABIC_RE = /[؀-ۿ]/;
+
+const BASMALA_NORMALIZED = normalizeArabic('بسم الله الرحمن الرحيم');
+/** Basmala word count + minimum meaningful tail. */
+const BASMALA_WORDS = 4;
+const BASMALA_MIN_TAIL_WORDS = 3;
+
+/**
+ * Recitation-tuned Whisper likes to prepend the basmala whether or not it
+ * was recited, and reciters open with it anyway — either way it is pure
+ * noise for identification (it matches 1:1 and every surah-opening verse
+ * equally). Strip it when enough transcript remains to identify a verse;
+ * a basmala-only transcript is kept (the user may genuinely want 1:1).
+ */
+export function stripLeadingBasmala(transcript: string): string {
+  const trimmed = transcript.trim();
+  const words = trimmed.split(/\s+/);
+  if (words.length < BASMALA_WORDS + BASMALA_MIN_TAIL_WORDS) return trimmed;
+  const head = normalizeArabic(words.slice(0, BASMALA_WORDS).join(' '));
+  if (head !== BASMALA_NORMALIZED) return trimmed;
+  return words.slice(BASMALA_WORDS).join(' ');
+}
+
+/**
+ * Word-coverage confidence: the fraction of the transcript's normalized
+ * words that appear in the verse (0-100). Fuse's edit-distance score
+ * undersells a mostly-right Whisper transcript (device repro 2026-07-04:
+ * 98:1 correctly ranked first but displayed at 48% because two garbled
+ * words blocked containment); coverage reads "9 of 12 words are in this
+ * verse" as 75. Junk matches riding on one or two shared words score low,
+ * so it also widens the gap between the right verse and noise.
+ */
+export function coverageConfidence(transcript: string, verseArabic: string): number {
+  const transcriptWords = normalizeArabic(transcript).split(' ').filter(Boolean);
+  if (transcriptWords.length === 0) return 0;
+  const verseWords = new Set(normalizeArabic(verseArabic).split(' ').filter(Boolean));
+  const covered = transcriptWords.filter((w) => verseWords.has(w)).length;
+  return Math.round((covered / transcriptWords.length) * 100);
+}
 
 export interface VoiceMatcher {
   findTopMatches(
@@ -50,6 +97,13 @@ export interface VoiceMatchOptions {
   minScore?: number;
   /** Provided only when semantic search is initialized and ready. */
   semanticSearch?: (query: string) => Promise<ThematicResult[]>;
+  /**
+   * Whisper-path scoring (spec 017 amendment): strip a leading basmala
+   * before matching and lift each result's score to its word-coverage
+   * confidence when that is higher than the fuzzy score. Leave unset for
+   * OS transcripts, whose error model Fuse already fits.
+   */
+  coverageConfidence?: boolean;
 }
 
 function topScore(matches: VerseMatch[]): number {
@@ -72,7 +126,9 @@ export async function matchVoiceTranscript(
   const topN = options.topN ?? 5;
   const minScore = options.minScore ?? 15;
 
-  const trimmed = transcript.trim();
+  const trimmed = options.coverageConfidence
+    ? stripLeadingBasmala(transcript)
+    : transcript.trim();
   if (!trimmed) return [];
 
   // Rung 1: plain path.
@@ -85,8 +141,18 @@ export async function matchVoiceTranscript(
     results = betterOf(results, windowed);
   }
 
-  // Rung 3: semantic merge when the fuzzy ladder is still weak.
-  if (topScore(results) < VOICE_WEAK_SCORE && options.semanticSearch) {
+  // Rung 3: semantic merge when the fuzzy ladder is still weak — ENGLISH
+  // transcripts only. The semantic bi-encoder embeds queries with an
+  // English-trained model (MiniLM over translations+tags), so an Arabic
+  // transcript produces noise embeddings and the merged "results" are
+  // random verses. Device repro 2026-07-04: recited 98:1, fuzzy had it at
+  // rank 2, semantic junk displaced it entirely.
+  const isArabicTranscript = ARABIC_RE.test(trimmed);
+  if (
+    !isArabicTranscript &&
+    topScore(results) < VOICE_WEAK_SCORE &&
+    options.semanticSearch
+  ) {
     try {
       const semantic = await options.semanticSearch(trimmed);
       const seen = new Set(results.map((m) => `${m.verse.surah}:${m.verse.ayah}`));
@@ -101,6 +167,17 @@ export async function matchVoiceTranscript(
       // Semantic is best-effort here — keep whatever the fuzzy ladder found.
       console.warn('[VoiceMatch] Semantic merge failed:', err?.message ?? String(err));
     }
+  }
+
+  // Whisper-path confidence lift: max(fuzzy, coverage) — coverage never
+  // demotes a strong fuzzy/containment hit, only rescues undersold ones.
+  if (options.coverageConfidence && results.length > 0) {
+    results = results
+      .map((m) => ({
+        ...m,
+        score: Math.max(m.score, coverageConfidence(trimmed, m.verse.arabicText)),
+      }))
+      .sort((a, b) => b.score - a.score);
   }
 
   return results;

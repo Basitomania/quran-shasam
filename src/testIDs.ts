@@ -31,6 +31,9 @@ export const testIDs = {
     languageEnglish: 'voice.language.english',
     transcript: 'voice.transcript',
     results: 'voice.results',
+    progress: 'voice.progress',
+    status: 'voice.status',
+    tryAgain: 'voice.tryAgain',
   },
   themes: {
     input: 'themes.input',

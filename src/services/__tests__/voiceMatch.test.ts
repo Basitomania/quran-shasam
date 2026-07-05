@@ -90,19 +90,36 @@ describe('ladder mechanics (stub matcher)', () => {
     expect(results).toEqual([hit(1, 2, 95)]);
   });
 
-  it('still-weak results trigger the semantic merge with dedupe and nominal scores', async () => {
+  it('weak ARABIC transcript never calls semantic (English-model mismatch guard)', async () => {
+    // The semantic bi-encoder is English-trained; Arabic queries produce
+    // noise embeddings. Device repro 2026-07-04: semantic junk at the old
+    // nominal 50 buried the correct fuzzy hit (98:1@30).
+    const m = stubMatcher([hit(1, 2, 30)], [hit(1, 2, 35), hit(2, 255, 25)]);
+    const semantic = jest.fn(async () => [
+      { verse: verse(24, 35), reason: 'noise' },
+    ]);
+    const results = await matchVoiceTranscript(m, 'نص ضعيف', 'arabic', {
+      semanticSearch: semantic,
+    });
+    expect(semantic).not.toHaveBeenCalled();
+    const keys = results.map((r) => `${r.verse.surah}:${r.verse.ayah}`);
+    expect(keys).toEqual(['1:2', '2:255']);
+  });
+
+  it('weak ENGLISH transcript merges semantic BELOW real fuzzy hits', async () => {
     const m = stubMatcher([hit(1, 2, 30)], [hit(1, 2, 35), hit(2, 255, 25)]);
     const semantic = jest.fn(async () => [
       { verse: verse(1, 2), reason: 'dup — must dedupe' },
       { verse: verse(24, 35), reason: 'semantic-only' },
     ]);
-    const results = await matchVoiceTranscript(m, 'نص ضعيف', 'arabic', {
+    const results = await matchVoiceTranscript(m, 'weak english transcript', 'english', {
       semanticSearch: semantic,
     });
     expect(semantic).toHaveBeenCalledTimes(1);
     const keys = results.map((r) => `${r.verse.surah}:${r.verse.ayah}`);
-    expect(keys).toEqual(['24:35', '1:2', '2:255']); // 50 > 35 > 25, no dup 1:2
-    expect(results[0].score).toBe(SEMANTIC_MERGE_SCORE);
+    // Nominal semantic score (20) ranks below every plausible fuzzy hit.
+    expect(keys).toEqual(['1:2', '2:255', '24:35']);
+    expect(results[2].score).toBe(SEMANTIC_MERGE_SCORE);
   });
 
   it('does not call semantic when the fuzzy ladder is already strong', async () => {
@@ -146,16 +163,16 @@ describe('eval transcripts through the real matcher (fixture corpus)', () => {
     windowedSpy.mockRestore();
   });
 
-  it('known-hard garbled transcript falls through to semantic and surfaces its result', async () => {
+  it('known-hard garbled ARABIC transcript does NOT get a fake semantic rescue', async () => {
+    // Accepted residual: the garbled 24:35 clip stays unmatched rather than
+    // surfacing English-model noise dressed up as a result.
     const semantic = jest.fn(async () => [
-      { verse: verse(24, 35), reason: 'semantic rescue' },
+      { verse: verse(24, 35), reason: 'would be noise on real device' },
     ]);
-    const results = await matchVoiceTranscript(matcher, EVAL_TRANSCRIPTS.hard_24_35, 'arabic', {
+    await matchVoiceTranscript(matcher, EVAL_TRANSCRIPTS.hard_24_35, 'arabic', {
       semanticSearch: semantic,
     });
-    expect(semantic).toHaveBeenCalledTimes(1);
-    const keys = results.map((r) => `${r.verse.surah}:${r.verse.ayah}`);
-    expect(keys).toContain('24:35');
+    expect(semantic).not.toHaveBeenCalled();
   });
 
   it('garbled short transcript stays within topN and minScore contract', async () => {
@@ -167,5 +184,107 @@ describe('eval transcripts through the real matcher (fixture corpus)', () => {
     for (const r of results) {
       expect(r.score).toBeGreaterThanOrEqual(15);
     }
+  });
+});
+
+// Spec 017 amendment (2026-07-04): Whisper-path scoring — basmala strip +
+// word-coverage confidence. Device repro: 98:1 ranked first but displayed
+// 48% (two garbled words blocked containment, Fuse undersold the rest);
+// 1:1 rode into the results purely on a transcribed basmala prefix.
+describe('whisper-path scoring (basmala strip + coverage confidence)', () => {
+  const { stripLeadingBasmala, coverageConfidence } = jest.requireActual('../voiceMatch');
+
+  const arabicHit = (surah: number, ayah: number, score: number, arabicText: string): VerseMatch => ({
+    verse: { ...verse(surah, ayah), arabicText },
+    score,
+  });
+
+  describe('stripLeadingBasmala', () => {
+    it('strips a leading basmala when a meaningful tail remains (normalized compare)', () => {
+      expect(
+        stripLeadingBasmala('بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ لم يكن الذين كفروا')
+      ).toBe('لم يكن الذين كفروا');
+    });
+
+    it('keeps a basmala-only transcript (the user may want 1:1)', () => {
+      const basmala = 'بسم الله الرحمن الرحيم';
+      expect(stripLeadingBasmala(basmala)).toBe(basmala);
+    });
+
+    it('keeps the basmala when the tail is too short to identify a verse', () => {
+      const t = 'بسم الله الرحمن الرحيم لم يكن';
+      expect(stripLeadingBasmala(t)).toBe(t);
+    });
+
+    it('leaves non-basmala openings untouched', () => {
+      const t = 'الحمد لله رب العالمين الرحمن الرحيم مالك يوم الدين';
+      expect(stripLeadingBasmala(t)).toBe(t);
+    });
+  });
+
+  describe('coverageConfidence', () => {
+    it('is 100 when every transcript word appears in the verse', () => {
+      expect(coverageConfidence('ٱلحمد لله', 'الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ')).toBe(100);
+    });
+
+    it('reads a mostly-right garbled transcript as its covered fraction', () => {
+      // 4 of 6 words covered (كفروه/ءال are transcription errors) -> 67.
+      expect(
+        coverageConfidence('لم يكن الذين كفروه من ءال', 'لم يكن الذين كفروا من اهل الكتاب')
+      ).toBe(67);
+    });
+
+    it('is low for a junk verse sharing only one word', () => {
+      expect(coverageConfidence('لم يكن الذين كفروا', 'الرحمن الرحيم يكن')).toBe(25);
+    });
+
+    it('is 0 for an empty transcript', () => {
+      expect(coverageConfidence('   ', 'نص')).toBe(0);
+    });
+  });
+
+  describe('ladder integration (coverageConfidence option)', () => {
+    // Verse text covering the whole transcript below; junk shares one word.
+    const RIGHT_VERSE = 'لم يكن الذين كفروا من اهل الكتاب والمشركين منفكين';
+    const JUNK_VERSE = 'قل هو الله احد ولم يكن له كفوا احد';
+    const TRANSCRIPT = 'بسم الله الرحمن الرحيم لم يكن الذين كفروا من اهل الكتاب';
+
+    it('strips the basmala before matching and lifts scores to coverage, re-sorting', async () => {
+      // Fuzzy undersold the right verse below the junk hit.
+      const m = stubMatcher(
+        [arabicHit(112, 2, 55, JUNK_VERSE), arabicHit(98, 1, 48, RIGHT_VERSE)],
+        []
+      );
+      const results = await matchVoiceTranscript(m, TRANSCRIPT, 'arabic', {
+        coverageConfidence: true,
+      });
+
+      // Basmala stripped from the matcher input.
+      expect(m.findTopMatches).toHaveBeenCalledWith(
+        'لم يكن الذين كفروا من اهل الكتاب',
+        5,
+        'arabic',
+        15
+      );
+      // Right verse: 7/7 words covered -> 100, outranks junk (max 55 vs coverage 14).
+      expect(results.map((r) => `${r.verse.surah}:${r.verse.ayah}`)).toEqual(['98:1', '112:2']);
+      expect(results[0].score).toBe(100);
+      expect(results[1].score).toBe(55);
+    });
+
+    it('never demotes a hit whose fuzzy score beats its coverage', async () => {
+      const m = stubMatcher([arabicHit(1, 2, 95, 'نص بلا تغطيه')], []);
+      const results = await matchVoiceTranscript(m, 'الحمد لله رب العالمين', 'arabic', {
+        coverageConfidence: true,
+      });
+      expect(results[0].score).toBe(95);
+    });
+
+    it('without the option, transcript and scores pass through unchanged', async () => {
+      const m = stubMatcher([arabicHit(98, 1, 48, RIGHT_VERSE)], []);
+      const results = await matchVoiceTranscript(m, TRANSCRIPT, 'arabic', {});
+      expect(m.findTopMatches).toHaveBeenCalledWith(TRANSCRIPT, 5, 'arabic', 15);
+      expect(results[0].score).toBe(48);
+    });
   });
 });

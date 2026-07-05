@@ -31,6 +31,9 @@ permissions:
     id: 'tab.voice'
 - assertVisible:
     id: 'voice.micButton'
+# Spec 018: the phase status line renders in idle too — no mic audio needed.
+- assertVisible:
+    id: 'voice.status'
 - assertVisible:
     id: 'voice.language.arabic'
 - assertVisible:

@@ -316,7 +316,11 @@ describe('spec 017 — Whisper recitation path (Arabic)', () => {
     expect(mockMatchVoiceTranscript).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to the OS transcript when Whisper transcription fails', async () => {
+  // Amended 2026-07-04 (user directive): Whisper is authoritative for
+  // Arabic sessions — failures surface as no-match, never as silent
+  // OS-transcript matching (which masked recording-handoff bugs as
+  // low-confidence results on device).
+  it('whisper transcription failure surfaces no-match, never the OS transcript', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockIsRecitationReady.mockImplementation(() => true);
     mockTranscribeRecitation.mockImplementation(async () => {
@@ -331,12 +335,12 @@ describe('spec 017 — Whisper recitation path (Arabic)', () => {
     fireSpeechEvent('end');
     await act(async () => {});
 
-    expect(mockFindTopMatches).toHaveBeenCalledTimes(1);
-    expect(mockFindTopMatches).toHaveBeenCalledWith('النص الاحتياطى', 5, 'arabic', 15);
+    expect(mockFindTopMatches).not.toHaveBeenCalled();
     expect(mockMatchVoiceTranscript).not.toHaveBeenCalled();
+    expect(getByTestId(testIDs.voice.tryAgain)).toBeTruthy();
   });
 
-  it('falls back to the OS transcript when Whisper returns an empty transcript', async () => {
+  it('empty whisper transcript surfaces no-match, never the OS transcript', async () => {
     mockIsRecitationReady.mockImplementation(() => true);
     mockTranscribeRecitation.mockImplementation(async () => '   ');
     const { getByTestId } = render(<VoiceSearchScreen />);
@@ -348,10 +352,12 @@ describe('spec 017 — Whisper recitation path (Arabic)', () => {
     fireSpeechEvent('end');
     await act(async () => {});
 
-    expect(mockFindTopMatches).toHaveBeenCalledWith('نص من النظام', 5, 'arabic', 15);
+    expect(mockFindTopMatches).not.toHaveBeenCalled();
+    expect(getByTestId(testIDs.voice.tryAgain)).toBeTruthy();
   });
 
-  it('uses the OS path when no recording uri arrives despite a Whisper session', async () => {
+  it('missing recording uri in a Whisper session surfaces no-match (handoff bug is loud)', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockIsRecitationReady.mockImplementation(() => true);
     const { getByTestId } = render(<VoiceSearchScreen />);
 
@@ -362,7 +368,8 @@ describe('spec 017 — Whisper recitation path (Arabic)', () => {
     await act(async () => {});
 
     expect(mockTranscribeRecitation).not.toHaveBeenCalled();
-    expect(mockFindTopMatches).toHaveBeenCalledWith('نص عادى', 5, 'arabic', 15);
+    expect(mockFindTopMatches).not.toHaveBeenCalled();
+    expect(getByTestId(testIDs.voice.tryAgain)).toBeTruthy();
   });
 
   it('15s max-session cap still force-stops a Whisper session', async () => {
