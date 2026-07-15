@@ -88,6 +88,19 @@ describe('copy action', () => {
   });
 });
 
+describe('long-press action (spec 003 power-user copy)', () => {
+  it('long-pressing the card triggers copy (same as the copy button)', async () => {
+    const { getByTestId } = render(<VerseCard verse={verse} />);
+
+    fireEvent(getByTestId(testIDs.verseCard.card(verse.surah, verse.ayah)), 'longPress');
+
+    await waitFor(() =>
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(formatVerseForShare(verse))
+    );
+    expect(Clipboard.setStringAsync).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('share action', () => {
   it('shares the formatVerseForShare(verse) message', async () => {
     const shareSpy = jest
